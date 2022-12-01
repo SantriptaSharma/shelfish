@@ -49,7 +49,17 @@ int main(int argc, char *argv[])
 
     logf("Connected to %s:%d", ip, port);
 
-    read(serverDescriptor, NULL, 1);
+    size_t bufSize = 128;
+    char *buf = malloc(bufSize);
+
+    while (read(serverDescriptor, buf, bufSize) > 0)
+    {
+        logf("Received: %s", buf);
+    }
+
+    free(buf);
+    close(clientDescriptor);
+    shutdown(serverDescriptor, SHUT_RDWR);
 
     return 0;
 }

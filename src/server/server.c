@@ -3,21 +3,43 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
 #include <string.h>
 
 #include "../lib/log.h"
 #include "./connection_pool.h"
 
-#define THREAD_POOL_SIZE 8
+#define THREAD_POOL_SIZE 2
 
 void* SocketThreadMain(void *args)
 {
+    RoutineInput *input = (RoutineInput*) args;
 
+    while (1)
+    {
+        if (send(input->socketDescriptor, "ping!", 6, 0) < 0)
+        {
+            errorf("Pinging socket %d on index %d failed, killing thread.", input->socketDescriptor, input->poolIndex);
+            break;
+        }
+
+        sleep(5);
+    }
+
+    pthread_mutex_lock(input->mutex);
+    CloseConnection(input->pool, input->poolIndex);
+    pthread_mutex_unlock(input->mutex);
+
+    return NULL;
 }
 
 int main(int argc, char *argv[])
 {
-    ConnectionPool *pool = CreateConnectionPool(THREAD_POOL_SIZE, &SocketThreadMain);
+    ConnectionPool *pool = CreateConnectionPool(THREAD_POOL_SIZE, SocketThreadMain);
+    
+    // Ignore broken pipe signals
+    signal(SIGPIPE, SIG_IGN);
 
     if (pool == NULL)
     {
@@ -89,9 +111,11 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        logf("Connected to client with address %s, spawning thread", inet_ntoa(incoming.sin_addr));
+        logf("Connected to client with address %s, spawning thread with socket descriptor %d", inet_ntoa(incoming.sin_addr), incomingDescriptor);
+        AddConnection(pool, incomingDescriptor);
     }
 
+    log("Closing server");
     FreeConnectionPool(pool);
     shutdown(serverDescriptor, SHUT_RDWR);
     return 0;
